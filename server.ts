@@ -142,6 +142,22 @@ async function startServer() {
   app.use("/public", express.static(path.join(process.cwd(), "public")));
 
   // API Routes
+  app.get("/api/download/:filename", (req, res) => {
+    const filename = req.params.filename;
+    const filePath = path.join(UPLOADS_DIR, filename);
+    
+    // Check if file exists
+    fs.access(filePath)
+      .then(() => {
+        console.log(`[DOWNLOAD] Serving file: ${filename}`);
+        res.download(filePath, filename); // This forces download with original filename
+      })
+      .catch(() => {
+        console.error(`[DOWNLOAD] File not found: ${filePath}`);
+        res.status(404).json({ error: "ফাইলটি খুঁজে পাওয়া যায়নি" });
+      });
+  });
+
   app.post("/api/upload", upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
     const fileUrl = `/uploads/${req.file.filename}`;

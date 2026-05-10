@@ -27,14 +27,14 @@ export default function DownloadModal({ game, adCode, onClose }: DownloadModalPr
   const handleDownload = () => {
     if (!canDownload) return;
     
-    // Create a hidden link for absolute direct download
-    const link = document.createElement('a');
-    link.href = game.downloadUrl;
-    link.setAttribute('download', game.name); // Try to force download with game name
-    link.target = '_blank';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // If it's a local upload, use our secure download API
+    if (game.downloadUrl.startsWith('/uploads/')) {
+      const filename = game.downloadUrl.split('/').pop();
+      window.location.href = `/api/download/${filename}`;
+    } else {
+      // If it's an external link (Drive/Mega), open in new tab
+      window.open(game.downloadUrl, '_blank');
+    }
   };
 
   return (
@@ -137,7 +137,7 @@ export default function DownloadModal({ game, adCode, onClose }: DownloadModalPr
                 </div>
               </section>
 
-              <div className="flex flex-col gap-4 pb-10 md:pb-0">
+                      <div className="flex flex-col gap-4 pb-10 md:pb-0">
                 <button
                   onClick={handleDownload}
                   disabled={!canDownload}
@@ -151,7 +151,7 @@ export default function DownloadModal({ game, adCode, onClose }: DownloadModalPr
                   {canDownload ? (
                     <>
                       <Download className="w-4 h-4 md:w-5 md:h-5" />
-                      সরাসরি ডাউনলোড করুন
+                      {game.downloadUrl.startsWith('/uploads/') ? 'সরাসরি ডাউনলোড করুন' : 'ডাউনলোড লিঙ্ক ওপেন করুন'}
                     </>
                   ) : (
                     <>

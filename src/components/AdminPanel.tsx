@@ -60,8 +60,13 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
         body: formData
       });
 
-      if (!res.ok) throw new Error('Upload failed');
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Upload failed');
+      }
+
       const data = await res.json();
+      console.log(`[UPLOAD SUCCESS] Field: ${field}, URL: ${data.url}`);
       
       const fileUrl = data.url;
       const sizeInBytes = file.size;
@@ -77,9 +82,10 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
         [field]: fileUrl,
         size: field === 'downloadUrl' ? sizeDisplay : prev.size
       }));
-    } catch (error) {
-      console.error('Upload Error:', error);
-      alert('ফাইল আপলোড করা যায়নি। আবার চেষ্টা করুন।');
+      alert(field === 'image' ? 'ছবি আপলোড হয়েছে!' : 'ফাইল আপলোড হয়েছে!');
+    } catch (error: any) {
+      console.error('Upload Error Details:', error);
+      alert(`ভুল: ${error.message || 'ফাইল আপলোড করা যায়নি। আবার চেষ্টা করুন।'}`);
     } finally {
       setUploading(false);
     }
@@ -468,7 +474,7 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
                             </div>
                             <input 
                               type="file" 
-                              accept=".zip,.rar,.7z,.exe,.apk,.msi,application/*"
+                              accept=".zip,.rar,.7z,.exe,.apk,.msi,.bin,.iso,application/*"
                               className="hidden" 
                               onChange={(e) => handleFileUpload(e, 'downloadUrl')}
                             />
