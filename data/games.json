@@ -1,0 +1,13 @@
+{
+  "games": [],
+  "ads": {
+    "headerAd": "",
+    "downloadPageAd": ""
+  },
+  "settings": {
+    "backgroundImage": "",
+    "backgroundColor": "#050505",
+    "backgroundAnimation": "none",
+    "overlayOpacity": 0.5
+  }
+}
