@@ -22,7 +22,9 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
     backgroundType: 'image',
     backgroundColor: '#050505',
     backgroundAnimation: 'none',
-    overlayOpacity: 0.5
+    overlayOpacity: 0.5,
+    logoImage: '',
+    logoSize: 64
   });
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -236,17 +238,42 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
     }
   };
 
-  const handleSettingUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video') => {
+  const handleSettingUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video' | 'logo') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check file size (limit to 10GB)
-    if (file.size > 10 * 1024 * 1024 * 1024) {
-      alert('File size too large. Please keep it under 10GB.');
+    // Check file size (limit to 1GB for faster network speeds)
+    if (file.size > 1024 * 1024 * 1024) {
+      alert('File size too large. Please keep it under 1GB.');
       return;
     }
 
     setUploading(true);
+    
+    if (type === 'logo') {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) throw new Error('Logo upload failed. Please try a smaller image.');
+
+        const data = await res.json();
+        setSettings(prev => ({ ...prev, logoImage: data.url }));
+        alert('লোগো সফলভাবে আপলোড করা হয়েছে!');
+      } catch (error: any) {
+        console.error(error);
+        alert(error.message);
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const result = event.target?.result as string;
@@ -645,6 +672,82 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
               <div className="flex items-center gap-2 mb-6 md:mb-8">
                 <Palette className="w-5 h-5 text-blue-500" />
                 <h2 className="text-lg md:text-xl font-bold">Background & Theme</h2>
+              </div>
+
+              {/* BRAND LOGO MANAGEMENT */}
+              <div className="mb-8 p-5 bg-white/5 rounded-2xl border border-white/10 space-y-4">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-cyan-400" />
+                  <label className="text-[10px] uppercase tracking-widest font-extrabold text-slate-300">ওয়েবসাইট লোগো (Brand Logo Upload)</label>
+                </div>
+                <div className="flex flex-col sm:flex-row items-center gap-5">
+                  <div className="w-20 h-20 bg-[#070b14] border border-cyan-500/20 rounded-2xl flex items-center justify-center p-2 relative shrink-0">
+                    {settings.logoImage ? (
+                      <img src={settings.logoImage} className="w-full h-full object-contain" alt="Current Logo" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="text-center">
+                        <span className="text-[8px] font-black uppercase text-cyan-400 tracking-tighter">Default SVG</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 w-full space-y-3">
+                    <p className="text-[10px] text-white/30 italic">আপনার ব্র্যান্ডের লোগোটি এখানে জেপিজি বা পিএনজি ফরমেটে আপলোড করুন। খালি রাখলে ডিফল্ট সুন্দর অ্যানিমেটেড গেমিং লোগোটিই চলবে।</p>
+                    <div className="flex flex-wrap gap-2">
+                      <label className="cursor-pointer">
+                        <div className="bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 rounded-xl py-2.5 px-4 text-center transition-all">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">লোগো ছবি আপলোড দিন</span>
+                        </div>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => handleSettingUpload(e, 'logo')} 
+                        />
+                      </label>
+                      {settings.logoImage && (
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setSettings(prev => ({ ...prev, logoImage: '' }));
+                            alert('ডিফল্ট লোগো রিস্টোর করা হয়েছে, সেভ-এ ক্লিক করুন!');
+                          }}
+                          className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl py-2.5 px-4 text-center text-[10px] font-bold uppercase tracking-wider text-red-500 transition-all"
+                        >
+                          ডিফল্ট লোগো ফিরিয়ে আনুন
+                        </button>
+                      )}
+                    </div>
+                    {/* Manual Link Input */}
+                    <input 
+                      type="text"
+                      placeholder="অথবা লোগো ইমেজের ডিরেক্ট লিংক দিন..."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-[11px] font-mono focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      value={settings.logoImage || ''}
+                      onChange={e => setSettings({...settings, logoImage: e.target.value})}
+                    />
+
+                    {/* Logo Display Size adjustment */}
+                    <div className="pt-3 border-t border-white/5 space-y-2 font-sans">
+                      <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-slate-300 font-extrabold">
+                        <span>লোগোর আকার নিয়ন্ত্রণ (Logo Display Size)</span>
+                        <span className="text-cyan-400 font-mono">{(settings.logoSize || 64)}px</span>
+                      </div>
+                      <input 
+                        type="range"
+                        min="24"
+                        max="160"
+                        value={settings.logoSize || 64}
+                        onChange={e => setSettings({...settings, logoSize: Number(e.target.value)})}
+                        className="w-full accent-cyan-500 bg-white/10 rounded-lg appearance-none h-1.5 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[8px] uppercase tracking-tighter text-white/30 font-semibold font-mono">
+                        <span>Min: 24px</span>
+                        <span>Default: 64px</span>
+                        <span>Max: 160px</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
               
               <div className="grid md:grid-cols-2 gap-8 md:gap-12">

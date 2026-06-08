@@ -1,7 +1,10 @@
+@import url('https://fonts.googleapis.com/css2?family=Oxanium:wght@700;800;900&family=Montserrat:wght@400;700;900&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-oxanium: "Oxanium", sans-serif;
+  --font-montserrat: "Montserrat", sans-serif;
   --color-bg-dark: #05070a;
   --color-glass: rgba(15, 23, 42, 0.5);
   --color-glass-border: rgba(255, 255, 255, 0.05);

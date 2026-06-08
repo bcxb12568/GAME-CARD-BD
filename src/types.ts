@@ -23,4 +23,6 @@ export interface SiteSettings {
   backgroundColor: string;
   backgroundAnimation: 'none' | 'slow-pulse' | 'gentle-orbit';
   overlayOpacity: number;
+  logoImage?: string;
+  logoSize?: number;
 }

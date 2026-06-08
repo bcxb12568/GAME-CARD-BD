@@ -95,7 +95,9 @@ async function readData() {
           backgroundType: "image",
           backgroundColor: "#050505",
           backgroundAnimation: "none",
-          overlayOpacity: 0.5
+          overlayOpacity: 0.5,
+          logoImage: "",
+          logoSize: 64
         }
       };
       await writeData(defaultData);
@@ -113,7 +115,9 @@ async function readData() {
         backgroundType: "image",
         backgroundColor: "#050505",
         backgroundAnimation: "none",
-        overlayOpacity: 0.5
+        overlayOpacity: 0.5,
+        logoImage: "",
+        logoSize: 64
       }
     };
   }
@@ -259,7 +263,9 @@ async function startServer() {
       backgroundImage: "",
       backgroundColor: "#050505",
       backgroundAnimation: "none",
-      overlayOpacity: 0.5
+      overlayOpacity: 0.5,
+      logoImage: "",
+      logoSize: 64
     });
   });
 

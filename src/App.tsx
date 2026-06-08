@@ -31,6 +31,17 @@ export default function App() {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    const faviconElement = document.getElementById('favicon') as HTMLLinkElement | null;
+    if (faviconElement) {
+      if (settings?.logoImage) {
+        faviconElement.href = settings.logoImage;
+      } else {
+        faviconElement.href = '/favicon.png';
+      }
+    }
+  }, [settings?.logoImage]);
+
   const fetchData = async () => {
     try {
       const [gamesRes, adsRes, settingsRes] = await Promise.all([
@@ -114,6 +125,7 @@ export default function App() {
 
         <Header 
           onAdminTrigger={() => setShowAdmin(true)} 
+          settings={settings}
         />
         
         <div className="flex flex-1 overflow-hidden relative">
