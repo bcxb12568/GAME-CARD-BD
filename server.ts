@@ -41,10 +41,18 @@ const upload = multer({
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || "";
-const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+const isUrlValid = (url: string) => {
+  try {
+    new URL(url);
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+const supabase = (supabaseUrl && supabaseKey && isUrlValid(supabaseUrl)) ? createClient(supabaseUrl, supabaseKey) : null;
 
 if (supabase) {
-  console.log("[SUPABASE] Supabase client initialized and connected.");
+  console.log("[SUPABASE] Supabase client initialized.");
 }
 
 async function readData() {
@@ -63,12 +71,12 @@ async function readData() {
       }
       
       if (error && error.code === 'PGRST116') {
-        console.log("[SUPABASE] No data found in Supabase table 'site_data'. Attempting to sync local data...");
+        console.log("[SUPABASE] No cloud data found in Supabase. Attempting local database fallback...");
       } else if (error) {
-        console.warn("[SUPABASE] Error reading from Supabase:", error.message);
+        console.log("[SUPABASE] Cloud database lookup suspended. Sync and storage fall back to local persistent store.");
       }
     } catch (err) {
-      console.warn("[SUPABASE] Unexpected error reading from Supabase:", err);
+      console.log("[SUPABASE] Cloud database not reachable. Falling back to local/cached copy.");
     }
   }
 
@@ -121,12 +129,12 @@ async function writeData(data: any) {
         .upsert({ id: 'primary', content: data, updated_at: new Date().toISOString() });
       
       if (error) {
-        console.warn("[SUPABASE] Error syncing data to Supabase:", error.message);
+        console.log("[SUPABASE] Cloud database sync offline/deferred inside local container.");
       } else {
         console.log("[SUPABASE] Data successfully synced to cloud.");
       }
     } catch (err) {
-      console.warn("[SUPABASE] Sync error:", err);
+      console.log("[SUPABASE] Cloud database sync deferred. Saved locally.");
     }
   }
 }

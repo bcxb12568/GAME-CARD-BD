@@ -3,6 +3,7 @@ import { Star, Download, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface GameCardProps {
+  key?: string | number;
   game: Game;
   index: number;
   onClick: () => void;

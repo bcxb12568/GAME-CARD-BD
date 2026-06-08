@@ -52,41 +52,53 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
 
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Upload failed');
-      }
-
-      const data = await res.json();
-      console.log(`[UPLOAD SUCCESS] Field: ${field}, URL: ${data.url}`);
-      
-      const fileUrl = data.url;
-      const sizeInBytes = file.size;
-      let sizeDisplay = '';
-      if (sizeInBytes > 1024 * 1024 * 1024) {
-        sizeDisplay = `${(sizeInBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+      if (field === 'image') {
+        // Image handling: Use Base64 for stability on Vercel/serverless
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const result = event.target?.result as string;
+          setNewGame(prev => ({ ...prev, image: result }));
+          setUploading(false);
+          alert('ছবি লোড হয়েছে!');
+        };
+        reader.readAsDataURL(file);
       } else {
-        sizeDisplay = `${(sizeInBytes / (1024 * 1024)).toFixed(1)} MB`;
-      }
+        // Game File handling: Send to server API
+        const formData = new FormData();
+        formData.append('file', file);
 
-      setNewGame(prev => ({ 
-        ...prev, 
-        [field]: fileUrl,
-        size: field === 'downloadUrl' ? sizeDisplay : prev.size
-      }));
-      alert(field === 'image' ? 'ছবি আপলোড হয়েছে!' : 'ফাইল আপলোড হয়েছে!');
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.error('Server response:', text);
+          throw new Error('আপনার সার্ভার বড় ফাইল গ্রহণ করতে পারছে না। ছোট ফাইল ট্রাই করুন বা External Link ব্যবহার করুন।');
+        }
+
+        const data = await res.json();
+        const fileUrl = data.url;
+        const sizeInBytes = file.size;
+        let sizeDisplay = '';
+        if (sizeInBytes > 1024 * 1024 * 1024) {
+          sizeDisplay = `${(sizeInBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+        } else {
+          sizeDisplay = `${(sizeInBytes / (1024 * 1024)).toFixed(1)} MB`;
+        }
+
+        setNewGame(prev => ({ 
+          ...prev, 
+          [field]: fileUrl,
+          size: sizeDisplay
+        }));
+        alert('ফাইল আপলোড হয়েছে!');
+        setUploading(false);
+      }
     } catch (error: any) {
       console.error('Upload Error Details:', error);
-      alert(`ভুল: ${error.message || 'ফাইল আপলোড করা যায়নি। আবার চেষ্টা করুন।'}`);
-    } finally {
+      alert(`ত্রুটি: ${error.message}`);
       setUploading(false);
     }
   };
