@@ -97,7 +97,8 @@ async function readData() {
           backgroundAnimation: "none",
           overlayOpacity: 0.5,
           logoImage: "",
-          logoSize: 64
+          logoSize: 64,
+          faviconImage: ""
         }
       };
       await writeData(defaultData);
@@ -117,7 +118,8 @@ async function readData() {
         backgroundAnimation: "none",
         overlayOpacity: 0.5,
         logoImage: "",
-        logoSize: 64
+        logoSize: 64,
+        faviconImage: ""
       }
     };
   }
@@ -265,7 +267,8 @@ async function startServer() {
       backgroundAnimation: "none",
       overlayOpacity: 0.5,
       logoImage: "",
-      logoSize: 64
+      logoSize: 64,
+      faviconImage: ""
     });
   });
 

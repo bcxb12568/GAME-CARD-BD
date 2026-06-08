@@ -33,14 +33,19 @@ export default function App() {
 
   useEffect(() => {
     const faviconElement = document.getElementById('favicon') as HTMLLinkElement | null;
-    if (faviconElement) {
-      if (settings?.logoImage) {
-        faviconElement.href = settings.logoImage;
-      } else {
-        faviconElement.href = '/favicon.png';
+    const shortcutElement = document.getElementById('favicon-shortcut') as HTMLLinkElement | null;
+    const appleElement = document.getElementById('favicon-apple') as HTMLLinkElement | null;
+    
+    const elements = [faviconElement, shortcutElement, appleElement];
+    const defaultIcon = '/uploads/1780932924288-667597334-1000012555.png';
+    const activeUrl = settings?.faviconImage || settings?.logoImage || defaultIcon;
+
+    elements.forEach(el => {
+      if (el) {
+        el.href = activeUrl;
       }
-    }
-  }, [settings?.logoImage]);
+    });
+  }, [settings?.faviconImage, settings?.logoImage]);
 
   const fetchData = async () => {
     try {

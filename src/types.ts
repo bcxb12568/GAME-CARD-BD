@@ -25,4 +25,5 @@ export interface SiteSettings {
   overlayOpacity: number;
   logoImage?: string;
   logoSize?: number;
+  faviconImage?: string;
 }

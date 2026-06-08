@@ -24,7 +24,8 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
     backgroundAnimation: 'none',
     overlayOpacity: 0.5,
     logoImage: '',
-    logoSize: 64
+    logoSize: 64,
+    faviconImage: ''
   });
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -238,7 +239,7 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
     }
   };
 
-  const handleSettingUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video' | 'logo') => {
+  const handleSettingUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video' | 'logo' | 'favicon') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -250,7 +251,7 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
 
     setUploading(true);
     
-    if (type === 'logo') {
+    if (type === 'logo' || type === 'favicon') {
       try {
         const formData = new FormData();
         formData.append('file', file);
@@ -260,11 +261,16 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
           body: formData
         });
 
-        if (!res.ok) throw new Error('Logo upload failed. Please try a smaller image.');
+        if (!res.ok) throw new Error(`${type === 'logo' ? 'Logo' : 'Tab Icon'} upload failed. Please try a smaller image.`);
 
         const data = await res.json();
-        setSettings(prev => ({ ...prev, logoImage: data.url }));
-        alert('লোগো সফলভাবে আপলোড করা হয়েছে!');
+        if (type === 'logo') {
+          setSettings(prev => ({ ...prev, logoImage: data.url }));
+          alert('লোগো সফলভাবে আপলোড করা হয়েছে!');
+        } else {
+          setSettings(prev => ({ ...prev, faviconImage: data.url }));
+          alert('ওয়েবসাইট ট্যাব আইকন (Favicon) সফলভাবে আপলোড করা হয়েছে!');
+        }
       } catch (error: any) {
         console.error(error);
         alert(error.message);
@@ -746,6 +752,61 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
                         <span>Max: 160px</span>
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* WEBSITE FAVICON / TAB ICON MANAGEMENT */}
+              <div className="mb-8 p-5 bg-white/5 rounded-2xl border border-white/10 space-y-4">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-emerald-400" />
+                  <label className="text-[10px] uppercase tracking-widest font-extrabold text-slate-300">ট্যাব আইকন বা ফেভিকন (Tab Icon / Favicon Upload)</label>
+                </div>
+                <div className="flex flex-col sm:flex-row items-center gap-5">
+                  <div className="w-16 h-16 bg-[#070b14] border border-emerald-500/20 rounded-2xl flex items-center justify-center p-2 relative shrink-0">
+                    {settings.faviconImage ? (
+                      <img src={settings.faviconImage} className="w-full h-full object-contain" alt="Current Favicon" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="text-center">
+                        <span className="text-[8px] font-black uppercase text-emerald-400 tracking-tighter">Default Icon</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 w-full space-y-3">
+                    <p className="text-[10px] text-white/30 italic">আপনার ব্রাউজার ট্যাবে এবং গুগল সার্চ রেজাল্টে যে গোল লোগোটি দেখায়, তা এখানে আপলোড করুন। খালি থাকলে মূল ব্র্যান্ড লোগোটিই ট্যাব লোগো হিসেবে কাজ করবে।</p>
+                    <div className="flex flex-wrap gap-2">
+                      <label className="cursor-pointer">
+                        <div className="bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl py-2.5 px-4 text-center transition-all">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">ট্যাব আইকন আপলোড দিন</span>
+                        </div>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => handleSettingUpload(e, 'favicon')} 
+                        />
+                      </label>
+                      {settings.faviconImage && (
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setSettings(prev => ({ ...prev, faviconImage: '' }));
+                            alert('ট্যাব আইকন রিস্টোর করা হয়েছে, সেভ-এ ক্লিক করুন!');
+                          }}
+                          className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl py-2.5 px-4 text-center text-[10px] font-bold uppercase tracking-wider text-red-500 transition-all"
+                        >
+                          ডিফল্ট রিসেট করুন
+                        </button>
+                      )}
+                    </div>
+                    {/* Manual Link Input */}
+                    <input 
+                      type="text"
+                      placeholder="অথবা আইকন ইমেজের ডিরেক্ট লিংক দিন..."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-[11px] font-mono focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      value={settings.faviconImage || ''}
+                      onChange={e => setSettings({...settings, faviconImage: e.target.value})}
+                    />
                   </div>
                 </div>
               </div>
