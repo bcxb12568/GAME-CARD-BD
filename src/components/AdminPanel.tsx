@@ -48,21 +48,44 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024 * 1024) {
-      alert('File size exceeds 10GB limit!');
+    // Check size limit: 32MB constraint on standard Cloud Run requests
+    const maxCloudRunLimit = 32 * 1024 * 1024; // 32MB
+    if (file.size > maxCloudRunLimit && field === 'downloadUrl') {
+      alert(`গেম ফাইলের সাইজ অনেক বড় (${(file.size / (1024 * 1024)).toFixed(1)} MB)! ক্লাউড হোস্টে সর্বোচ্চ ৩২ MB পর্যন্ত ফাইল সরাসরি আপলোড দেওয়া যায়। এর চেয়ে বড় গেম ফাইলগুলো আপনি Google Drive বা Mediafire-এ আপলোড করে ডাউনলোড লিংক হিসেবে যোগ করুন।`);
       return;
     }
 
     setUploading(true);
     try {
       if (field === 'image') {
-        // Image handling: Use Base64 for stability on Vercel/serverless
+        // Image Upload: Try server-side first, fallback to stable Base64 if needed
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+
+          const res = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            setNewGame(prev => ({ ...prev, image: data.url }));
+            alert('কভার ফটো সফলভাবে আপলোড করা হয়েছে!');
+            setUploading(false);
+            return;
+          }
+        } catch (uploadErr) {
+          console.warn('Server image upload deferred, switching to base64 encoding...', uploadErr);
+        }
+
+        // Base64 fallback for images
         const reader = new FileReader();
         reader.onload = (event) => {
           const result = event.target?.result as string;
           setNewGame(prev => ({ ...prev, image: result }));
           setUploading(false);
-          alert('ছবি লোড হয়েছে!');
+          alert('কভার ফটো লোড করা হয়েছে!');
         };
         reader.readAsDataURL(file);
       } else {
@@ -78,7 +101,7 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
         if (!res.ok) {
           const text = await res.text();
           console.error('Server response:', text);
-          throw new Error('আপনার সার্ভার বড় ফাইল গ্রহণ করতে পারছে না। ছোট ফাইল ট্রাই করুন বা External Link ব্যবহার করুন।');
+          throw new Error('সার্ভারের হোস্টিং লিমিটের কারণে সরাসরি বড় ফাইল আপলোড নেওয়া যাচ্ছে না। অনুগ্রহ করে অনুর্ধ্ব ৩২ MB ফাইলের ক্ষেত্রে এটি ব্যবহার করুন, অথবা গুগল ড্রাইভ লিংক ব্যবহার করুন।');
         }
 
         const data = await res.json();
@@ -96,7 +119,7 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
           [field]: fileUrl,
           size: sizeDisplay
         }));
-        alert('ফাইল আপলোড হয়েছে!');
+        alert('গেম ফাইল সফলভাবে আপলোড হয়েছে!');
         setUploading(false);
       }
     } catch (error: any) {
@@ -524,8 +547,8 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
                               onChange={(e) => handleFileUpload(e, 'downloadUrl')}
                             />
                           </label>
-                          <p className="text-[9px] font-bold text-blue-400 uppercase tracking-widest mt-2 block text-center">
-                            Max Limit: 10 GB
+                          <p className="text-[9px] font-bold text-yellow-500 uppercase tracking-widest mt-2 block text-center">
+                            সরাসরি আপলোড লিমিট: সর্বোচ্চ ৩২ MB (Max Limit: 32 MB)
                           </p>
                         </div>
                       ) : (
