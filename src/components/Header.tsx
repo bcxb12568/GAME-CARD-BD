@@ -1,16 +1,70 @@
-import { Layout, User, Bell } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Layout, User, Bell, Sparkles, Clock, Check, CheckCheck, BellRing, ArrowLeft, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useRef } from 'react';
 import React from 'react';
-import { SiteSettings } from '../types';
+import { SiteSettings, Game } from '../types';
 
 interface HeaderProps {
   onAdminTrigger: () => void;
   settings?: SiteSettings;
+  games?: Game[];
+  onSelectGame?: (game: Game) => void;
 }
 
-export default function Header({ onAdminTrigger, settings }: HeaderProps) {
+export default function Header({ onAdminTrigger, settings, games, onSelectGame }: HeaderProps) {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [showNotifications, setShowNotifications] = React.useState(false);
+  const [lastReadId, setLastReadId] = React.useState<string>(() => {
+    return localStorage.getItem('last_read_game_id') || '';
+  });
+
+  // Sort games by numeric ID descending to get newest first
+  const sortedGames = React.useMemo(() => {
+    if (!games) return [];
+    return [...games].sort((a, b) => Number(b.id) - Number(a.id));
+  }, [games]);
+
+  const latestFiveGames = React.useMemo(() => {
+    return sortedGames.slice(0, 10);
+  }, [sortedGames]);
+
+  // If there's any game with ID greater than lastReadId, those are unread
+  const hasUnread = React.useMemo(() => {
+    if (latestFiveGames.length === 0) return false;
+    if (!lastReadId) return true;
+    return latestFiveGames.some(game => Number(game.id) > Number(lastReadId));
+  }, [latestFiveGames, lastReadId]);
+
+  const handleOpenNotifications = () => {
+    setShowNotifications(!showNotifications);
+    if (!showNotifications && latestFiveGames.length > 0) {
+      const newestId = latestFiveGames[0].id;
+      localStorage.setItem('last_read_game_id', newestId);
+      setLastReadId(newestId);
+    }
+  };
+
+  const formatTimeAgo = (idStr: string) => {
+    const timestamp = Number(idStr);
+    if (isNaN(timestamp)) return 'সম্প্রতি';
+    const now = Date.now();
+    const diffMs = now - timestamp;
+    if (diffMs < 0) return 'এইমাত্র';
+    
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 60) return 'এইমাত্র';
+    
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin} মিনিট আগে`;
+    
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return `${diffHour} ঘণ্টা আগে`;
+    
+    const diffDay = Math.floor(diffHour / 24);
+    if (diffDay === 1) return 'গতকাল';
+    return `${diffDay} দিন আগে`;
+  };
 
   const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
     // Clear any existing timer
@@ -250,15 +304,153 @@ export default function Header({ onAdminTrigger, settings }: HeaderProps) {
           <a href="#" className="text-slate-400 hover:text-white transition-colors">Support</a>
         </nav>
 
-        <div className="flex items-center gap-2 md:gap-4 md:pl-6 md:border-l md:border-white/5">
+        <div className="flex items-center gap-2 md:gap-4 md:pl-6 md:border-l md:border-white/5 relative">
           <motion.button 
             whileHover={{ scale: 1.1, color: '#fff' }}
             whileTap={{ scale: 0.9 }}
-            className="p-2 text-slate-500 hover:text-white transition-colors relative"
+            className={`p-2 transition-colors relative rounded-full ${showNotifications ? 'text-blue-400 bg-blue-500/10' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
+            onClick={handleOpenNotifications}
+            id="notification-bell-btn"
           >
-            <Bell className="w-5 h-5" />
-            <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-blue-500 rounded-full" />
+            <Bell className={`w-5 h-5 ${hasUnread ? 'animate-bounce' : ''}`} />
+            {hasUnread && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full ring-2 ring-slate-950 animate-pulse" />
+            )}
           </motion.button>
+
+          {/* Notifications Fullscreen Modal Overlay */}
+          <AnimatePresence>
+            {showNotifications && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-[#06060c]/98 backdrop-blur-3xl z-[999] flex flex-col justify-between overflow-hidden animate-fade-in"
+                id="notifications-fullscreen-panel"
+              >
+                {/* Header of Fullscreen Panel */}
+                <div className="px-4 py-4 md:px-12 md:py-8 border-b border-white/5 bg-[#0d0d15]/50 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-blue-500/10 rounded-xl border border-blue-500/20">
+                      <BellRing className="w-5 h-5 text-blue-400 animate-pulse" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm md:text-xl font-bold tracking-tight text-white font-sans">নতুন আপডেট ও নোটিফিকেশন</h2>
+                      <p className="text-[10px] md:text-xs text-slate-400 mt-0.5">সবশেষ আপলোড হওয়া অ্যাপ এবং গেমসের তালিকা</p>
+                    </div>
+                  </div>
+                  
+                  {/* Close / Back button in top corner! */}
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setShowNotifications(false)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-slate-300 hover:text-white transition-colors text-xs font-bold font-sans border border-white/5 shadow-lg shrink-0"
+                    id="notifications-back-btn"
+                  >
+                    <ArrowLeft className="w-4 h-4 text-blue-400" />
+                    <span>পিছনে যান (Back)</span>
+                  </motion.button>
+                </div>
+
+                {/* Notifications List - scrollable, nicely centered and spacious! */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-6 md:px-12 flex justify-center">
+                  <div className="w-full max-w-3xl space-y-3 md:space-y-4">
+                    {latestFiveGames.length === 0 ? (
+                      <div className="py-24 text-center space-y-4">
+                        <div className="w-16 h-16 rounded-full bg-slate-900 flex items-center justify-center mx-auto text-slate-600 border border-white/5">
+                          <Bell className="w-8 h-8" />
+                        </div>
+                        <h3 className="text-sm font-bold text-slate-300">কোনে নতুন গেম বা অ্যাপ এখনো আপলোড করা হয়নি!</h3>
+                        <p className="text-xs text-slate-500 max-w-md mx-auto">গেম বা অ্যাপ সরাসরি আপলোড হওয়ার সাথে সাথে তা ১-ক্লিকের ডাউনলোডার হিসেবে আপনার এখানে চলে আসবে।</p>
+                      </div>
+                    ) : (
+                      latestFiveGames.map((game, idx) => {
+                        const isUnread = !lastReadId || Number(game.id) > Number(lastReadId);
+                        const isApp = game.category?.toLowerCase() === 'apps';
+                        
+                        return (
+                          <motion.div
+                            initial={{ opacity: 0, y: 15 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: idx * 0.03 }}
+                            key={game.id}
+                            onClick={() => {
+                              if (onSelectGame) onSelectGame(game);
+                              setShowNotifications(false);
+                            }}
+                            className={`p-4 md:p-5 flex gap-4 bg-slate-900/60 hover:bg-slate-850/80 border border-white/5 hover:border-blue-500/30 rounded-2xl cursor-pointer transition-all text-left relative group ${isUnread ? 'bg-blue-500/5 hover:bg-blue-500/8 border-blue-500/15' : ''}`}
+                          >
+                            {/* Left Cover Photo */}
+                            <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-slate-800 shrink-0 overflow-hidden border border-white/10 relative shadow-lg">
+                              {game.image ? (
+                                <img 
+                                  src={game.image} 
+                                  alt={game.name} 
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-sm font-bold text-slate-500">
+                                  {game.name.substring(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Detail fields */}
+                            <div className="flex-grow min-w-0 pr-2 flex flex-col justify-between">
+                              <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className={`text-[8px] md:text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${
+                                    isApp ? 'bg-purple-600/25 text-purple-300 border border-purple-500/15' : 'bg-blue-600/25 text-blue-300 border border-blue-500/15'
+                                  }`}>
+                                    {isApp ? 'Mobile App' : 'New Game'}
+                                  </span>
+                                  <span className="text-[9px] md:text-[10px] text-slate-400 font-bold bg-slate-900 border border-white/5 px-2 py-0.5 rounded font-mono">
+                                    {game.size}
+                                  </span>
+                                </div>
+                                <h4 className="text-xs md:text-base font-bold text-slate-100 group-hover:text-blue-400 transition-colors truncate font-sans">
+                                  {game.name}
+                                </h4>
+                              </div>
+                              
+                              <div className="flex items-center gap-2 md:gap-3 mt-1.5 text-[10px] md:text-xs text-slate-500">
+                                <span className="flex items-center gap-1 font-mono text-[10px] md:text-[11px]">
+                                  <Clock className="w-3.5 h-3.5 text-slate-600" />
+                                  {formatTimeAgo(game.id)}
+                                </span>
+                                <span>•</span>
+                                <span className="text-blue-400 font-bold font-sans text-[10px] md:text-xs hover:underline flex items-center gap-1">
+                                  <Sparkles className="w-3.5 h-3.5 text-blue-400 animate-pulse" /> ১-ক্লিক ডাউনলোডার
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Chevron or indicator */}
+                            <div className="flex flex-col justify-center items-end shrink-0">
+                              {isUnread ? (
+                                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)] animate-pulse" />
+                              ) : (
+                                <Check className="w-4 h-4 text-slate-500" />
+                              )}
+                            </div>
+                          </motion.div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer of Fullscreen Panel */}
+                <div className="px-4 py-4 md:px-12 md:py-6 border-t border-white/5 bg-[#0d0d15]/50 text-center shrink-0">
+                  <p className="text-[10px] md:text-xs text-slate-500 flex items-center justify-center gap-1.5">
+                    <CheckCheck className="w-4 h-4 text-emerald-500" /> সকল গেম ও মোবাইল অ্যাপস ১-ক্লিক হাইস্পিড ডাউনলোডার সহ আপডেট করা হচ্ছে
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </header>

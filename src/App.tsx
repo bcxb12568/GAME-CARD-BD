@@ -73,7 +73,7 @@ export default function App() {
     return matchesSearch && matchesCategory;
   });
 
-  const categories = ['All', 'Open World', 'Racing', 'RPG', 'Action', 'Sports'];
+  const categories = ['All', 'Open World', 'Racing', 'RPG', 'Action', 'Sports', 'Apps'];
 
   if (showAdmin) {
     return <AdminPanel onClose={() => setShowAdmin(false)} onRefresh={fetchData} />;
@@ -131,6 +131,8 @@ export default function App() {
         <Header 
           onAdminTrigger={() => setShowAdmin(true)} 
           settings={settings}
+          games={games}
+          onSelectGame={setSelectedGame}
         />
         
         <div className="flex flex-1 overflow-hidden relative">

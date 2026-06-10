@@ -4,6 +4,70 @@ import { X, Plus, Trash2, Save, Layout, Megaphone, Lock, ArrowLeft, Upload, Link
 import { Game, AdSettings, SiteSettings } from '../types';
 import { cn } from '../lib/utils';
 import React from 'react';
+import { supabase } from '../lib/supabase';
+
+// High-speed, super lightweight client-side image compressor.
+// Compresses covers & logos to JPEG under 150KB to prevent network bottlenecks and Vercel payload too large limit crashes (max 4.5MB).
+const compressImage = (file: File, maxWidth = 800, maxHeight = 800, quality = 0.75): Promise<{ base64: string, file: File }> => {
+  return new Promise((resolve) => {
+    // If it's not actually an image, resolve with standard file representation
+    if (!file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve({ base64: e.target?.result as string || '', file });
+      reader.readAsDataURL(file);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve({ base64: e.target?.result as string || '', file });
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const base64 = canvas.toDataURL('image/jpeg', quality);
+        
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const compressedFile = new File([blob], file.name.substring(0, file.name.lastIndexOf('.')) + '.jpg', {
+              type: 'image/jpeg',
+              lastModified: Date.now()
+            });
+            resolve({ base64, file: compressedFile });
+          } else {
+            resolve({ base64, file });
+          }
+        }, 'image/jpeg', quality);
+      };
+      img.onerror = () => resolve({ base64: e.target?.result as string || '', file });
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => resolve({ base64: '', file });
+    reader.readAsDataURL(file);
+  });
+};
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -48,20 +112,51 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check size limit: 32MB constraint on standard Cloud Run requests
-    const maxCloudRunLimit = 32 * 1024 * 1024; // 32MB
-    if (file.size > maxCloudRunLimit && field === 'downloadUrl') {
-      alert(`গেম ফাইলের সাইজ অনেক বড় (${(file.size / (1024 * 1024)).toFixed(1)} MB)! ক্লাউড হোস্টে সর্বোচ্চ ৩২ MB পর্যন্ত ফাইল সরাসরি আপলোড দেওয়া যায়। এর চেয়ে বড় গেম ফাইলগুলো আপনি Google Drive বা Mediafire-এ আপলোড করে ডাউনলোড লিংক হিসেবে যোগ করুন।`);
+    // Expand upload limit dynamically to 5GB if Supabase Storage is configured, otherwise keep standard 32MB server limit
+    const maxLimit = supabase ? 5 * 1024 * 1024 * 1024 : 32 * 1024 * 1024;
+    if (file.size > maxLimit && field === 'downloadUrl') {
+      if (supabase) {
+        alert(`গেম ফাইলের সাইজ সুপাবেস স্টোরেজ আপলোড সীমা (৫ জিবি) অতিক্রম করেছে (${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB)! অনুগ্রহ করে এর চেয়ে বড় গেম ফাইলগুলো আপনার Google Drive, Dropbox বা Mega-তে ডিরেক্ট হাই-স্পিড লিংকে রূপান্তর করে পাশের "External Link" মাধ্যমে যোগ করুন।`);
+      } else {
+        alert(`গেম ফাইলের সাইজ অনেক বড় (${(file.size / (1024 * 1024)).toFixed(1)} MB)! ক্লাউড হোস্টে সর্বোচ্চ ৩২ MB পর্যন্ত ফাইল সরাসরি আপলোড দেওয়া যায়। এর চেয়ে বড় গেম ফাইলগুলো আপনি Google Drive বা Mediafire-এ আপলোড করে ডাউনলোড লিংক হিসেবে যোগ করুন।`);
+      }
       return;
     }
 
     setUploading(true);
     try {
       if (field === 'image') {
-        // Image Upload: Try server-side first, fallback to stable Base64 if needed
+        const compressed = await compressImage(file);
+        
+        // 1. Try Supabase direct upload for cover image
+        if (supabase) {
+          try {
+            const fileExt = compressed.file.name.split('.').pop();
+            const uniqueFilename = `covers/${Date.now()}-${Math.round(Math.random() * 1e9)}.${fileExt}`;
+            const { data, error } = await supabase.storage
+              .from('games')
+              .upload(uniqueFilename, compressed.file, {
+                cacheControl: '3600',
+                upsert: false
+              });
+            if (!error) {
+              const { data: { publicUrl } } = supabase.storage
+                .from('games')
+                .getPublicUrl(uniqueFilename);
+              setNewGame(prev => ({ ...prev, image: publicUrl }));
+              alert('কভার ফটো সরাসরি সুপাবেস ক্লাউডে সফলভাবে আপলোড করা হয়েছে!');
+              setUploading(false);
+              return;
+            }
+          } catch (supaErr) {
+            console.warn('Supabase cover image upload deferred to server/Base64:', supaErr);
+          }
+        }
+
+        // 2. Try standard server upload
         try {
           const formData = new FormData();
-          formData.append('file', file);
+          formData.append('file', compressed.file);
 
           const res = await fetch('/api/upload', {
             method: 'POST',
@@ -79,17 +174,65 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
           console.warn('Server image upload deferred, switching to base64 encoding...', uploadErr);
         }
 
-        // Base64 fallback for images
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const result = event.target?.result as string;
-          setNewGame(prev => ({ ...prev, image: result }));
-          setUploading(false);
-          alert('কভার ফটো লোড করা হয়েছে!');
-        };
-        reader.readAsDataURL(file);
+        // 3. Fallback to compressed base64 (only ~100KB, completely safe from Vercel Payload crashes!)
+        setNewGame(prev => ({ ...prev, image: compressed.base64 }));
+        setUploading(false);
+        alert('কভার ফটো কম্প্রেস করে লোড করা হয়েছে!');
       } else {
-        // Game File handling: Send to server API
+        // Game File Direct Uploads (Up to 5 GB via Supabase, or smaller via local server api)
+        if (supabase) {
+          try {
+            alert('আপনার বড় গেম ফাইলটি সরাসরি Supabase Cloud Storage-এ আপলোড করা হচ্ছে। অনুগ্রহ করে ব্রাউজার ট্যাবটি খোলা রাখুন এবং আপলোড সমাপ্তি মেসেজ পাওয়া পর্যন্ত অপেক্ষা করুন...');
+            
+            const fileExt = file.name.split('.').pop();
+            const uniqueFilename = `files/${Date.now()}-${Math.round(Math.random() * 1e9)}.${fileExt}`;
+            
+            const { data, error } = await supabase.storage
+              .from('games')
+              .upload(uniqueFilename, file, {
+                cacheControl: '3600',
+                upsert: false
+              });
+
+            if (error) {
+              throw error;
+            }
+
+            const { data: { publicUrl } } = supabase.storage
+              .from('games')
+              .getPublicUrl(uniqueFilename);
+
+            const sizeInBytes = file.size;
+            let sizeDisplay = '';
+            if (sizeInBytes > 1024 * 1024 * 1024) {
+              sizeDisplay = `${(sizeInBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+            } else {
+              sizeDisplay = `${(sizeInBytes / (1024 * 1024)).toFixed(1)} MB`;
+            }
+
+            setNewGame(prev => ({ 
+              ...prev, 
+              [field]: publicUrl,
+              size: sizeDisplay
+            }));
+            alert('অভিনন্দন! আপনার ৫ জিবি পর্যন্ত গেম ফাইলটি সরাসরি সুপাবেস ক্লাউডে সফলভাবে আপলোড করা হয়েছে!');
+            setUploading(false);
+            return;
+          } catch (supaErr: any) {
+            console.error('Supabase upload error:', supaErr);
+            alert(`ক্লাউড ডিরেক্ট আপলোড ব্যর্থ হয়েছে! সমস্যা: ${supaErr.message || 'বাকেট অ্যাক্সেস ডিনাইড'}। \n\n১. অনুগ্রহ করে আপনার Supabase ড্যাশবোর্ডে গিয়ে Storage সেকশনে "games" নামে একটি "Public" বাকেট (Storage Bucket) তৈরি করুন। \n২. অথবা, বিকল্প দ্রুত ব্যবস্থা হিসেবে পাশের "External Link" অপশন সিলেক্ট করে আপনার গুগল ড্রাইভ লিংক পেস্ট করুন। ওটা ১-ক্লিক ডাউনলোডার হিসেবে অটো কনভার্ট হয়ে যাবে!`);
+            setUploading(false);
+            return;
+          }
+        }
+
+        // Fallback for standard Server upload (under 32MB)
+        if (file.size > 32 * 1024 * 1024) {
+          alert('হোস্টিং সার্ভারের ইন-মেমোরি ও ভেরসেল বা ক্লাউড রান সীমাবদ্ধতার কারণে সরাসরি ৩২ MB এর বেশি ফাইল আপলোড করা সম্ভব নয়। সর্বোচ্চ ৫ জিবি পর্যন্ত ফাইল ক্লাউড আপলোড দিতে দয়া করে আপনার Supabase ক্লাউড কানেক্ট করুন অথবা গুগল ড্রাইভ লিংক কপি করে পাশে "External Link" এ যুক্ত করুন। লিংকটি অটো ১-ক্লিক হাইস্পিড লিংকে রূপান্তরিত হয়ে যাবে!');
+          setUploading(false);
+          return;
+        }
+
         const formData = new FormData();
         formData.append('file', file);
 
@@ -127,6 +270,34 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
       alert(`ত্রুটি: ${error.message}`);
       setUploading(false);
     }
+  };
+
+  const handleDownloadUrlChange = (value: string) => {
+    // Check if it is a Google Drive link
+    const driveMatch = value.match(/(?:https?:\/\/)?(?:drive\.google\.com\/)(?:file\/d\/|open\?id=)([a-zA-Z0-9_-]+)/i);
+    if (driveMatch && driveMatch[1]) {
+      const fileId = driveMatch[1];
+      const directLink = `https://drive.google.com/uc?export=download&id=${fileId}`;
+      setNewGame(prev => ({ 
+        ...prev, 
+        downloadUrl: directLink 
+      }));
+      alert('গুগল ড্রাইভ লিংক সনাক্ত করা হয়েছে! এটিকে সফলভাবে সরাসরি ১-ক্লিক হাই-স্পীড ডাউনলোড লিংকে (Direct Download Link) রূপান্তর করা হয়েছে। আপনার গেমাররা এখন গুগল ড্রাইভ প্রিভিউ পেজে না গিয়ে সরাসরি ১-ক্লিকেই ডাউনলোড শুরু করতে পারবে!');
+      return;
+    }
+
+    // Check if it's a Dropbox link
+    if (value.includes('dropbox.com') && value.includes('?dl=0')) {
+      const directLink = value.replace('?dl=0', '?dl=1');
+      setNewGame(prev => ({ 
+        ...prev, 
+        downloadUrl: directLink 
+      }));
+      alert('ড্রপবক্স লিংক সফলভাবে ১-ক্লিক ডিরেক্ট ডাউনলোড লিংকে রূপান্তর করা হয়েছে!');
+      return;
+    }
+
+    setNewGame(prev => ({ ...prev, downloadUrl: value }));
   };
 
   useEffect(() => {
@@ -274,46 +445,102 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
 
     setUploading(true);
     
-    if (type === 'logo' || type === 'favicon') {
+    if (type === 'logo' || type === 'favicon' || type === 'image') {
       try {
-        const formData = new FormData();
-        formData.append('file', file);
+        const compressed = await compressImage(file, 1200, 1200, 0.7); // Compress to stay very lightweight
 
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData
-        });
+        // 1. Try Supabase storage direct upload if available (excludes video)
+        if (supabase) {
+          try {
+            const fileExt = compressed.file.name.split('.').pop();
+            const folder = type === 'image' ? 'backgrounds/' : 'branding/';
+            const uniqueFilename = `${folder}${Date.now()}-${Math.round(Math.random() * 1e9)}.${fileExt}`;
+            
+            const { data, error } = await supabase.storage
+              .from('games')
+              .upload(uniqueFilename, compressed.file, {
+                cacheControl: '3600',
+                upsert: false
+              });
 
-        if (!res.ok) throw new Error(`${type === 'logo' ? 'Logo' : 'Tab Icon'} upload failed. Please try a smaller image.`);
+            if (!error) {
+              const { data: { publicUrl } } = supabase.storage
+                .from('games')
+                .getPublicUrl(uniqueFilename);
 
-        const data = await res.json();
-        if (type === 'logo') {
-          setSettings(prev => ({ ...prev, logoImage: data.url }));
-          alert('লোগো সফলভাবে আপলোড করা হয়েছে!');
-        } else {
-          setSettings(prev => ({ ...prev, faviconImage: data.url }));
-          alert('ওয়েবসাইট ট্যাব আইকন (Favicon) সফলভাবে আপলোড করা হয়েছে!');
+              if (type === 'logo') {
+                setSettings(prev => ({ ...prev, logoImage: publicUrl }));
+                alert('লোগো সরাসরি সুপাবেস ক্লাউডে সফলভাবে আপলোড করা হয়েছে!');
+                setUploading(false);
+                return;
+              } else if (type === 'favicon') {
+                setSettings(prev => ({ ...prev, faviconImage: publicUrl }));
+                alert('ওয়েবসাইট ট্যাব আইকন (Favicon) সরাসরি সুপাবেস ক্লাউডে সফলভাবে আপলোড করা হয়েছে!');
+                setUploading(false);
+                return;
+              } else if (type === 'image') {
+                setSettings(prev => ({ ...prev, backgroundImage: publicUrl }));
+                alert('ব্যাকগ্রাউন্ড ফটো সরাসরি সুপাবেস ক্লাউডে সফলভাবে আপলোড করা হয়েছে!');
+                setUploading(false);
+                return;
+              }
+            }
+          } catch (supaErr) {
+            console.warn('Supabase setting image upload failed/deferred:', supaErr);
+          }
+        }
+
+        // 2. Standard server uploads for logo and favicon
+        if (type === 'logo' || type === 'favicon') {
+          const formData = new FormData();
+          formData.append('file', compressed.file);
+
+          const res = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+          });
+
+          if (!res.ok) throw new Error(`${type === 'logo' ? 'Logo' : 'Tab Icon'} upload failed. Please try a smaller image.`);
+
+          const data = await res.json();
+          if (type === 'logo') {
+            setSettings(prev => ({ ...prev, logoImage: data.url }));
+            alert('লোগো সফলভাবে আপলোড করা হয়েছে!');
+          } else {
+            setSettings(prev => ({ ...prev, faviconImage: data.url }));
+            alert('ওয়েবসাইট ট্যাব আইকন (Favicon) সফলভাবে আপলোড করা হয়েছে!');
+          }
+          setUploading(false);
+          return;
+        }
+
+        // 3. Fallback to client-side compressed Base64 for settings wallpaper
+        if (type === 'image') {
+          setSettings(prev => ({ ...prev, backgroundImage: compressed.base64 }));
+          alert('ব্যাকগ্রাউন্ড ফটো কম্প্রেস করে লোড করা হয়েছে! সাইট সেটিংসটি সেভ করতে বাটনে ক্লিক করুন।');
+          setUploading(false);
+          return;
         }
       } catch (error: any) {
         console.error(error);
-        alert(error.message);
+        alert(error.message || 'আপলোড ব্যর্থ হয়েছে।');
       } finally {
         setUploading(false);
       }
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      if (type === 'image') {
-        setSettings(prev => ({ ...prev, backgroundImage: result }));
-      } else {
+    // Video handling (stays original)
+    if (type === 'video') {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result as string;
         setSettings(prev => ({ ...prev, backgroundVideo: result }));
-      }
-      setUploading(false);
-    };
-    reader.readAsDataURL(file);
+        setUploading(false);
+        alert('ব্যাকগ্রাউন্ড ভিডিও লোড করা হয়েছে!');
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   if (!isAuthenticated) {
@@ -349,8 +576,9 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
                 whileTap={{ scale: 0.98 }}
                 type="button" 
                 onClick={onClose}
-                className="flex-1 px-6 py-3 bg-white/5 hover:bg-white/10 text-white/60 rounded-xl transition-all"
+                className="flex-1 px-6 py-3 bg-white/5 hover:bg-white/10 text-white/60 rounded-xl transition-all font-bold flex items-center justify-center gap-1.5 font-sans text-xs"
               >
+                <ArrowLeft className="w-4 h-4 text-blue-400" />
                 Back to Site
               </motion.button>
               <motion.button 
@@ -358,7 +586,7 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
                 whileTap={{ scale: 0.98 }}
                 type="submit" 
                 disabled={uploading}
-                className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
+                className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 font-sans text-xs"
               >
                 {uploading ? (
                   <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}>
@@ -381,12 +609,13 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 md:mb-12">
           <div className="flex items-center gap-4">
             <motion.button 
-              whileHover={{ scale: 1.1, backgroundColor: 'rgba(255,255,255,0.1)' }}
-              whileTap={{ scale: 0.9 }}
+              whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.1)' }}
+              whileTap={{ scale: 0.95 }}
               onClick={onClose}
-              className="p-2 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-white/60"
+              className="px-4 py-2 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 transition-colors text-white/80 font-sans font-bold text-xs flex items-center gap-1.5"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-4 h-4 text-blue-400" />
+              <span>পিছনে যান (Back)</span>
             </motion.button>
             <div>
               <div className="flex items-center gap-2">
@@ -437,12 +666,12 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
             <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl md:rounded-3xl p-6 md:p-8">
               <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2">
                 <Plus className="w-5 h-5 text-blue-500" />
-                Add New Game
+                {newGame.category === 'Apps' ? 'Add New Moblie App' : 'Add New Game'}
               </h2>
               <form onSubmit={handleAddGame} className="space-y-4">
                 <div className="space-y-3 md:space-y-4">
                   <input 
-                    placeholder="Game Name"
+                    placeholder={newGame.category === 'Apps' ? "App Name (e.g. CapCut, Duolingo, Facebook)" : "Game Name (e.g. GTA V, FIFA)"}
                     className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:ring-1 focus:ring-blue-500 text-sm"
                     value={newGame.name}
                     onChange={e => setNewGame({...newGame, name: e.target.value})}
@@ -450,7 +679,7 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
                   />
                   <div className="grid grid-cols-2 gap-3 md:gap-4">
                     <input 
-                      placeholder="Size (e.g. 10 GB)"
+                      placeholder={newGame.category === 'Apps' ? "Size (e.g. 90 MB)" : "Size (e.g. 10 GB)"}
                       className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:ring-1 focus:ring-blue-500 text-sm"
                       value={newGame.size}
                       onChange={e => setNewGame({...newGame, size: e.target.value})}
@@ -459,13 +688,23 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
                     <select 
                       className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:ring-1 focus:ring-blue-500 text-sm"
                       value={newGame.category}
-                      onChange={e => setNewGame({...newGame, category: e.target.value})}
+                      onChange={e => {
+                        const nextCat = e.target.value;
+                        let nextReqs = newGame.requirements;
+                        if (nextCat === 'Apps' && (!newGame.requirements || newGame.requirements === '4GB RAM, 10GB HDD')) {
+                          nextReqs = 'Android 6.0+ / iOS';
+                        } else if (nextCat !== 'Apps' && newGame.requirements === 'Android 6.0+ / iOS') {
+                          nextReqs = '4GB RAM, 10GB HDD';
+                        }
+                        setNewGame({...newGame, category: nextCat, requirements: nextReqs});
+                      }}
                     >
                       <option value="Action">Action</option>
                       <option value="Open World">Open World</option>
                       <option value="Racing">Racing</option>
                       <option value="RPG">RPG</option>
                       <option value="Sports">Sports</option>
+                      <option value="Apps">Apps</option>
                     </select>
                   </div>
                   <div className="space-y-4">
@@ -530,7 +769,7 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
                       </p>
 
                       {downloadMethod === 'file' ? (
-                        <div className="space-y-2">
+                        <div className="space-y-4">
                           <label className="block cursor-pointer group">
                             <div className={cn(
                               "bg-white/5 border border-dashed border-white/10 rounded-xl py-8 px-4 text-center transition-all group-hover:border-blue-500/50 group-hover:bg-blue-500/5",
@@ -547,21 +786,50 @@ export default function AdminPanel({ onClose, onRefresh }: AdminPanelProps) {
                               onChange={(e) => handleFileUpload(e, 'downloadUrl')}
                             />
                           </label>
-                          <p className="text-[9px] font-bold text-yellow-500 uppercase tracking-widest mt-2 block text-center">
-                            সরাসরি আপলোড লিমিট: সর্বোচ্চ ৩২ MB (Max Limit: 32 MB)
-                          </p>
+                           {supabase ? (
+                            <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl space-y-2 text-left">
+                              <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest text-center flex items-center justify-center gap-1.5">
+                                <Zap className="w-3.5 h-3.5 fill-emerald-400 text-emerald-400 animate-pulse" />
+                                সরাসরি ক্লাউড আপলোড লিমিট: ৫ জিবি (Direct Cloud Max: 5 GB)
+                              </p>
+                              <p className="text-[11px] text-slate-300 leading-relaxed">
+                                আপনার এই অ্যাপটি সফলভাবে <strong>Supabase Cloud Storage</strong> এর সাথে সংযুক্ত রয়েছে! ব্রাউজার থেকে সরাসরি ৫ জিবি পর্যন্ত গেম ফাইল কোনো ইন-মেমোরি সার্ভার লোড ছাড়াই ১-ক্লিকে সরাসরি আপলোড দিন।
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-xl space-y-2 text-left">
+                              <p className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest text-center">
+                                সরাসরি আপলোড লিমিট: সর্বোচ্চ ৩২ MB (Max Limit: 32 MB)
+                              </p>
+                              <p className="text-[11px] text-slate-300 leading-relaxed">
+                                হোস্টিং সার্ভারের ইন-মেমোরি ক্যাপাসিটি ও ভেরসেল লিমিট বজায় রাখার স্বার্থে ৩২ MB এর বড় গেমগুলোর জন্য পাশের <strong className="text-blue-400">"External Link"</strong> অপশন টাই ট্রাই করুন। <br />
+                                💡 <strong>সুপার ট্রিক:</strong> আপনার গুগল ড্রাইভ লিংকটি এক্সটার্নাল লিংকে পেস্ট করলেই তা ১-ক্লিক হাইস্পিড লিংকে অটো কনভার্ট হবে! অথবা ব্রাউজার ফাইলেই ৫ জিবির ক্লাউড আপলোড সক্রিয় করতে আপনার Supabase ওয়ালেটে Storage Bucket তৈরি করুন।
+                              </p>
+                            </div>
+                          )}
                         </div>
                       ) : (
-                        <div className="space-y-2">
+                        <div className="space-y-3">
+                          <div className="p-4 bg-blue-500/5 border border-blue-500/10 rounded-2xl space-y-2 text-left">
+                            <h4 className="text-[11px] font-extrabold uppercase text-blue-400 tracking-wider flex items-center gap-1.5">
+                              <Cloud className="w-3.5 h-3.5" />
+                              💡 ৫ জিবি+ বা বড় গেম ফাইল যুক্ত করার নিয়ম ও জাদুকরী ট্রিক:
+                            </h4>
+                            <p className="text-[11px] text-slate-300 leading-relaxed space-y-1">
+                              ১. প্রথমে আপনার বড় গেম ফাইলটি আপনার <strong>Google Drive / Mega / Dropbox / Mediafire</strong>-এ আপলোড করুন।<br />
+                              ২. ফাইলের শেয়ার পারমিশন "Anyone with link" (যেকউ দেখতে পারবে) করুন এবং লিংকটি কপি করুন।<br />
+                              ৩. কপি করা ড্রাইভ বা ড্রপবক্স লিংকটি সরাসরি নিচে পেস্ট করুন। সিস্টেম স্বয়ংক্রিয়ভাবে ওটিকে <strong>১-ক্লিক হাই-স্পীড ডাউনলোড লিংকে (Direct Download Link)</strong> পরিবর্তন করে নেবে!
+                            </p>
+                          </div>
                            <input 
-                              placeholder="গেমের ডাউনলোড লিংক পেষ্ট করুন (Google Drive/Mega)"
-                              className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 focus:ring-1 focus:ring-blue-500 text-[11px] font-mono"
+                              placeholder="গেমের ডাউনলোড লিংক পেষ্ট করুন (যেমন Google Drive/Dropbox/Mega লিংক)"
+                              className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 focus:ring-1 focus:ring-blue-500 text-[11px] font-mono text-blue-300"
                               value={newGame.downloadUrl}
-                              onChange={e => setNewGame({...newGame, downloadUrl: e.target.value})}
+                              onChange={e => handleDownloadUrlChange(e.target.value)}
                               required
                             />
                             <input 
-                              placeholder="ফাইল সাইজ লিখে দিন (যেমন: 15 GB)"
+                              placeholder="ফাইল সাইজ লিখে দিন (যেমন: 4.5 GB বা 5 GB)"
                               className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:ring-1 focus:ring-blue-500 text-xs"
                               value={newGame.size}
                               onChange={e => setNewGame({...newGame, size: e.target.value})}

@@ -1,5 +1,5 @@
 import { Game } from '../types';
-import { X, Download, ShieldCheck, Clock, Share2, Info, Monitor, Cpu, Zap } from 'lucide-react';
+import { X, Download, ShieldCheck, Clock, Share2, Info, Monitor, Cpu, Zap, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -52,9 +52,11 @@ export default function DownloadModal({ game, adCode, onClose }: DownloadModalPr
       >
         <button 
           onClick={onClose}
-          className="absolute top-4 right-4 md:top-6 md:right-6 z-50 p-2 bg-white/10 md:bg-white/5 hover:bg-white/20 rounded-full transition-colors text-white"
+          className="absolute top-4 right-4 md:top-6 md:right-6 z-50 flex items-center gap-1.5 px-3.5 py-1.5 bg-white/5 hover:bg-white/10 hover:border-white/15 border border-white/5 rounded-xl transition-all text-slate-300 hover:text-white font-bold text-xs shadow-lg"
+          id="download-modal-back-btn"
         >
-          <X className="w-6 h-6" />
+          <ArrowLeft className="w-4 h-4 text-blue-400" />
+          <span>পিছনে যান (Back)</span>
         </button>
 
         {/* Left Side: Game Info */}
